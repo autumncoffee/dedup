@@ -37,12 +37,14 @@ include_directories("../ac")
 include_directories(".")
 
 add_subdirectory("../ac/ac-common" ac_common_bindir)
+add_subdirectory("../ac/ac-library/containers/rbtree" ac_library_rbtree_bindir)
 
 add_executable(dedup ${AC_DEDUP_SOURCES})
 
 target_link_libraries(
     dedup
     ac_common
+    ac_library_rbtree
     "-lcrypto"
     ${AC_TCMALLOC_LIBS}
     ${DEDUP_EXTRA_LIBS}

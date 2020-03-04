@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <ac-library/containers/rbtree/persistent.hpp>
+#include <ac-common/str.hpp>
 
 #ifdef RELEASE_FILESYSTEM
 #include <filesystem>
@@ -31,14 +33,28 @@ struct TItem {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " /path/to/dir [/path/to/dir2 ...]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " [-d /path/to/hashdb] /path/to/dir [/path/to/dir2 ...]" << std::endl;
         return 1;
     }
 
     std::deque<std::string> pathes;
+    std::string dbPath;
 
     for (size_t i = 1; i < argc; ++i) {
-        pathes.push_back(argv[i]);
+        if (strcmp(argv[i], "-d") == 0) {
+            ++i;
+            dbPath = argv[i];
+
+        } else {
+            pathes.push_back(argv[i]);
+        }
+    }
+
+    NAC::TPersistentRBTree* db(nullptr);
+
+    if (!dbPath.empty() && std::filesystem::exists(dbPath) && !std::filesystem::is_empty(dbPath)) {
+        db = new NAC::TPersistentRBTree(dbPath, NAC::TFile::ACCESS_RDWR);
+        db->FindRoot();
     }
 
     unsigned char hashed[SHA256_DIGEST_LENGTH];
@@ -75,15 +91,29 @@ int main(int argc, char** argv) {
 
             inodes[file.INodeNum()] = false;
 
-            SHA256((const unsigned char*)file.Data(), file.Size(), hashed);
-
-            static const char charTable[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
-
             hashedStr.resize(0);
 
-            for (size_t i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
-                hashedStr += charTable[hashed[i] >> 4];
-                hashedStr += charTable[hashed[i] & 0xf];
+            if (db) {
+                auto value = db->Get(nodeStr);
+
+                if (value) {
+                    hashedStr += (std::string)value;
+                }
+            }
+
+            if (hashedStr.empty()) {
+                SHA256((const unsigned char*)file.Data(), file.Size(), hashed);
+
+                static const char charTable[16] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+
+                for (size_t i = 0; i < SHA256_DIGEST_LENGTH; ++i) {
+                    hashedStr += charTable[hashed[i] >> 4];
+                    hashedStr += charTable[hashed[i] & 0xf];
+                }
+
+                if (db) {
+                    db->Insert(nodeStr, NAC::TBlob() << hashedStr);
+                }
             }
 
             auto&& it = items.find(hashedStr);
@@ -108,7 +138,21 @@ int main(int argc, char** argv) {
         pathes.pop_front();
     }
 
+    if (db) {
+        delete db;
+        db = nullptr;
+
+    } else if (!dbPath.empty()) {
+        db = new NAC::TPersistentRBTree(dbPath, NAC::TFile::ACCESS_CREATE);
+    }
+
     for (const auto& it : items) {
+        if (db) {
+            for (const auto& spec : it.second.Files) {
+                db->Insert(spec.Path, NAC::TBlob() << it.first);
+            }
+        }
+
         if (it.second.Files.size() < 2) {
             continue;
         }
@@ -166,6 +210,10 @@ int main(int argc, char** argv) {
                 perror("close");
             }
         }
+    }
+
+    if (db) {
+        delete db;
     }
 
     return 0;
