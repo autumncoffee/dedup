@@ -4,8 +4,8 @@ let
 in rec {
   enableDebugging = false; #true;
 
-  fsmetad = stdenv.mkDerivation {
-    name = "fsmetad";
+  dedup = stdenv.mkDerivation {
+    name = "dedup";
     dontStrip = enableDebugging;
     IS_DEV = enableDebugging;
     srcs = [./src ./ac];
