@@ -11,6 +11,7 @@
 #include <unistd.h>
 #include <ac-library/containers/rbtree/persistent.hpp>
 #include <ac-common/str.hpp>
+#include <string.h>
 
 #ifdef RELEASE_FILESYSTEM
 #include <filesystem>
@@ -33,13 +34,14 @@ struct TItem {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " [-d /path/to/hashdb] [-n] /path/to/dir [/path/to/dir2 ...]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " [-d /path/to/hashdb] [-n] [-c] /path/to/dir [/path/to/dir2 ...]" << std::endl;
         return 1;
     }
 
     std::deque<std::string> pathes;
     std::string dbPath;
     bool dryRun(false);
+    bool compareContent(false);
 
     for (size_t i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-d") == 0) {
@@ -48,6 +50,9 @@ int main(int argc, char** argv) {
 
         } else if (strcmp(argv[i], "-n") == 0) {
             dryRun = true;
+
+        } else if (strcmp(argv[i], "-c") == 0) {
+            compareContent = true;
 
         } else {
             pathes.push_back(argv[i]);
@@ -186,6 +191,23 @@ int main(int argc, char** argv) {
             for (const auto& spec : it.second.Files) {
                 if (spec.Path == master) {
                     continue;
+                }
+
+                if (compareContent) {
+                    NAC::TFile masterFile(master);
+                    NAC::TFile currentFile(spec.Path);
+
+                    if (!masterFile || !currentFile) {
+                        continue;
+                    }
+
+                    if (masterFile.Size() != currentFile.Size()) {
+                        continue;
+                    }
+
+                    if (memcmp(masterFile.Data(), currentFile.Data(), masterFile.Size()) != 0) {
+                        continue;
+                    }
                 }
 
                 std::cerr << master << " -> " << spec.Path << std::endl;
