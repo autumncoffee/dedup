@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
     std::string hashedStr;
     hashedStr.reserve(SHA256_DIGEST_LENGTH * 2);
 
-    std::unordered_map<std::string, TItem> items;
+    std::unordered_map<std::string, std::unordered_map<size_t, TItem>> items;
     std::unordered_map<ino_t, bool> inodes;
 
     while (!pathes.empty()) {
@@ -117,21 +117,29 @@ int main(int argc, char** argv) {
             }
 
             auto&& it = items.find(hashedStr);
+            TItem::TFile rec {
+                nodeStr,
+                file.INodeNum()
+            };
 
             if (it == items.end()) {
                 TItem item;
-                item.Files.push_back(TItem::TFile {
-                    nodeStr,
-                    file.INodeNum()
-                });
+                item.Files.push_back(std::move(rec));
 
-                items[hashedStr] = std::move(item);
+                items[hashedStr][file.Size()] = std::move(item);
 
             } else {
-                it->second.Files.push_back(TItem::TFile {
-                    nodeStr,
-                    file.INodeNum()
-                });
+                auto&& inner_it = it->second.find(file.Size());
+
+                if (inner_it == it->second.end()) {
+                    TItem item;
+                    item.Files.push_back(std::move(rec));
+
+                    it->second[file.Size()] = std::move(item);
+
+                } else {
+                    inner_it->second.Files.push_back(std::move(rec));
+                }
             }
         }
 
@@ -146,68 +154,70 @@ int main(int argc, char** argv) {
         db = new NAC::TPersistentRBTree(dbPath, NAC::TFile::ACCESS_CREATE);
     }
 
-    for (const auto& it : items) {
-        if (db) {
-            for (const auto& spec : it.second.Files) {
-                db->Insert(spec.Path, NAC::TBlob() << it.first);
-            }
-        }
-
-        if (it.second.Files.size() < 2) {
-            continue;
-        }
-
-        std::string master;
-
-        for (const auto& spec : it.second.Files) {
-            if (inodes.at(spec.INodeNum)) {
-                master = spec.Path;
-                break;
-            }
-        }
-
-        if (master.empty()) {
-            master = it.second.Files[0].Path;
-        }
-
-        for (const auto& spec : it.second.Files) {
-            if (spec.Path == master) {
-                continue;
-            }
-
-            std::cerr << master << " -> " << spec.Path << std::endl;
-
-            std::string tmpPath(spec.Path + ".XXXXXXXXXX");
-            int fh = mkstemp(tmpPath.data());
-
-            if (fh == -1) {
-                perror("mkstemp");
-                continue;
-            }
-
-            if (rename(spec.Path.c_str(), tmpPath.c_str()) == -1) {
-                perror("rename");
-                continue;
-            }
-
-            if (link(master.c_str(), spec.Path.c_str()) == -1) {
-                perror("link");
-
-                if (rename(tmpPath.c_str(), spec.Path.c_str()) == -1) {
-                    perror("rename");
-                    return 1;
-
-                } else {
-                    continue;
+    for (const auto& outer_it : items) {
+        for (const auto& it : outer_it.second) {
+            if (db) {
+                for (const auto& spec : it.second.Files) {
+                    db->Insert(spec.Path, NAC::TBlob() << outer_it.first);
                 }
             }
 
-            if (unlink(tmpPath.c_str()) == -1) {
-                perror("unlink");
+            if (it.second.Files.size() < 2) {
+                continue;
             }
 
-            if (close(fh) == -1) {
-                perror("close");
+            std::string master;
+
+            for (const auto& spec : it.second.Files) {
+                if (inodes.at(spec.INodeNum)) {
+                    master = spec.Path;
+                    break;
+                }
+            }
+
+            if (master.empty()) {
+                master = it.second.Files[0].Path;
+            }
+
+            for (const auto& spec : it.second.Files) {
+                if (spec.Path == master) {
+                    continue;
+                }
+
+                std::cerr << master << " -> " << spec.Path << std::endl;
+
+                std::string tmpPath(spec.Path + ".XXXXXXXXXX");
+                int fh = mkstemp(tmpPath.data());
+
+                if (fh == -1) {
+                    perror("mkstemp");
+                    continue;
+                }
+
+                if (rename(spec.Path.c_str(), tmpPath.c_str()) == -1) {
+                    perror("rename");
+                    continue;
+                }
+
+                if (link(master.c_str(), spec.Path.c_str()) == -1) {
+                    perror("link");
+
+                    if (rename(tmpPath.c_str(), spec.Path.c_str()) == -1) {
+                        perror("rename");
+                        return 1;
+
+                    } else {
+                        continue;
+                    }
+                }
+
+                if (unlink(tmpPath.c_str()) == -1) {
+                    perror("unlink");
+                }
+
+                if (close(fh) == -1) {
+                    perror("close");
+                }
             }
         }
     }
