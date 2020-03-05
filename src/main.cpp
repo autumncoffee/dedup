@@ -33,17 +33,21 @@ struct TItem {
 
 int main(int argc, char** argv) {
     if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " [-d /path/to/hashdb] /path/to/dir [/path/to/dir2 ...]" << std::endl;
+        std::cerr << "Usage: " << argv[0] << " [-d /path/to/hashdb] [-n] /path/to/dir [/path/to/dir2 ...]" << std::endl;
         return 1;
     }
 
     std::deque<std::string> pathes;
     std::string dbPath;
+    bool dryRun(false);
 
     for (size_t i = 1; i < argc; ++i) {
         if (strcmp(argv[i], "-d") == 0) {
             ++i;
             dbPath = argv[i];
+
+        } else if (strcmp(argv[i], "-n") == 0) {
+            dryRun = true;
 
         } else {
             pathes.push_back(argv[i]);
@@ -185,6 +189,10 @@ int main(int argc, char** argv) {
                 }
 
                 std::cerr << master << " -> " << spec.Path << std::endl;
+
+                if (dryRun) {
+                    continue;
+                }
 
                 std::string tmpPath(spec.Path + ".XXXXXXXXXX");
                 int fh = mkstemp(tmpPath.data());
