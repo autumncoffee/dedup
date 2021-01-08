@@ -16,12 +16,13 @@
 
 #ifdef RELEASE_FILESYSTEM
 #include <filesystem>
+
+namespace stdfs = std::filesystem;
+
 #else
 #include <experimental/filesystem>
 
-namespace std {
-    namespace filesystem = std::experimental::filesystem;
-}
+namespace stdfs = std::experimental::filesystem;
 #endif
 
 struct TItem {
@@ -67,7 +68,7 @@ int main(int argc, char** argv) {
 
     NAC::TPersistentRBTree* db(nullptr);
 
-    if (!dbPath.empty() && std::filesystem::exists(dbPath) && !std::filesystem::is_empty(dbPath)) {
+    if (!dbPath.empty() && stdfs::exists(dbPath) && !stdfs::is_empty(dbPath)) {
         db = new NAC::TPersistentRBTree(dbPath, NAC::TFile::ACCESS_RDWR);
         db->FindRoot();
     }
@@ -81,14 +82,14 @@ int main(int argc, char** argv) {
     std::unordered_map<ino_t, bool> inodes;
 
     while (!pathes.empty()) {
-        for (const auto& node : std::filesystem::directory_iterator(pathes.front())) {
+        for (const auto& node : stdfs::directory_iterator(pathes.front())) {
             const auto& nodeStr = node.path().string();
 
             if ((nodeStr == std::string(".")) || (nodeStr == std::string(".."))) {
                 continue;
             }
 
-            if (std::filesystem::is_directory(node)) {
+            if (stdfs::is_directory(node)) {
                 pathes.push_back(nodeStr);
                 continue;
             }
